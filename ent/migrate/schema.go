@@ -13,6 +13,7 @@ var (
 		{Name: "id", Type: field.TypeInt, Increment: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "modem_id", Type: field.TypeString, Nullable: true},
 		{Name: "number", Type: field.TypeString},
 		{Name: "data", Type: field.TypeBytes},
 		{Name: "text", Type: field.TypeString},
@@ -21,10 +22,16 @@ var (
 	}
 	// SmSsTable holds the schema information for the "sm_ss" table.
 	SmSsTable = &schema.Table{
-		Name:        "sm_ss",
-		Columns:     SmSsColumns,
-		PrimaryKey:  []*schema.Column{SmSsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{},
+		Name:       "sm_ss",
+		Columns:    SmSsColumns,
+		PrimaryKey: []*schema.Column{SmSsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "sms_modem_id",
+				Unique:  false,
+				Columns: []*schema.Column{SmSsColumns[3]},
+			},
+		},
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{

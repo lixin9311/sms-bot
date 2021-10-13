@@ -16,6 +16,8 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
+	// FieldModemID holds the string denoting the modem_id field in the database.
+	FieldModemID = "modem_id"
 	// FieldNumber holds the string denoting the number field in the database.
 	FieldNumber = "number"
 	// FieldData holds the string denoting the data field in the database.
@@ -26,7 +28,6 @@ const (
 	FieldDischargeTimestamp = "discharge_timestamp"
 	// FieldDeliveryState holds the string denoting the delivery_state field in the database.
 	FieldDeliveryState = "delivery_state"
-
 	// Table holds the table name of the sms in the database.
 	Table = "sm_ss"
 )
@@ -36,6 +37,7 @@ var Columns = []string{
 	FieldID,
 	FieldCreatedAt,
 	FieldUpdatedAt,
+	FieldModemID,
 	FieldNumber,
 	FieldData,
 	FieldText,

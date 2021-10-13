@@ -21,9 +21,9 @@ type SMSUpdate struct {
 	mutation *SMSMutation
 }
 
-// Where adds a new predicate for the SMSUpdate builder.
+// Where appends a list predicates to the SMSUpdate builder.
 func (su *SMSUpdate) Where(ps ...predicate.SMS) *SMSUpdate {
-	su.mutation.predicates = append(su.mutation.predicates, ps...)
+	su.mutation.Where(ps...)
 	return su
 }
 
@@ -79,6 +79,9 @@ func (su *SMSUpdate) Save(ctx context.Context) (int, error) {
 			return affected, err
 		})
 		for i := len(su.hooks) - 1; i >= 0; i-- {
+			if su.hooks[i] == nil {
+				return 0, fmt.Errorf("ent: uninitialized hook (forgotten import ent/runtime?)")
+			}
 			mut = su.hooks[i](mut)
 		}
 		if _, err := mut.Mutate(ctx, su.mutation); err != nil {
@@ -153,6 +156,12 @@ func (su *SMSUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Column: sms.FieldUpdatedAt,
 		})
 	}
+	if su.mutation.ModemIDCleared() {
+		_spec.Fields.Clear = append(_spec.Fields.Clear, &sqlgraph.FieldSpec{
+			Type:   field.TypeString,
+			Column: sms.FieldModemID,
+		})
+	}
 	if value, ok := su.mutation.DeliveryState(); ok {
 		_spec.Fields.Set = append(_spec.Fields.Set, &sqlgraph.FieldSpec{
 			Type:   field.TypeEnum,
@@ -163,8 +172,8 @@ func (su *SMSUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if n, err = sqlgraph.UpdateNodes(ctx, su.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{sms.Label}
-		} else if cerr, ok := isSQLConstraintError(err); ok {
-			err = cerr
+		} else if sqlgraph.IsConstraintError(err) {
+			err = &ConstraintError{err.Error(), err}
 		}
 		return 0, err
 	}
@@ -174,6 +183,7 @@ func (su *SMSUpdate) sqlSave(ctx context.Context) (n int, err error) {
 // SMSUpdateOne is the builder for updating a single SMS entity.
 type SMSUpdateOne struct {
 	config
+	fields   []string
 	hooks    []Hook
 	mutation *SMSMutation
 }
@@ -203,6 +213,13 @@ func (suo *SMSUpdateOne) Mutation() *SMSMutation {
 	return suo.mutation
 }
 
+// Select allows selecting one or more fields (columns) of the returned entity.
+// The default is selecting all fields defined in the entity schema.
+func (suo *SMSUpdateOne) Select(field string, fields ...string) *SMSUpdateOne {
+	suo.fields = append([]string{field}, fields...)
+	return suo
+}
+
 // Save executes the query and returns the updated SMS entity.
 func (suo *SMSUpdateOne) Save(ctx context.Context) (*SMS, error) {
 	var (
@@ -230,6 +247,9 @@ func (suo *SMSUpdateOne) Save(ctx context.Context) (*SMS, error) {
 			return node, err
 		})
 		for i := len(suo.hooks) - 1; i >= 0; i-- {
+			if suo.hooks[i] == nil {
+				return nil, fmt.Errorf("ent: uninitialized hook (forgotten import ent/runtime?)")
+			}
 			mut = suo.hooks[i](mut)
 		}
 		if _, err := mut.Mutate(ctx, suo.mutation); err != nil {
@@ -295,6 +315,18 @@ func (suo *SMSUpdateOne) sqlSave(ctx context.Context) (_node *SMS, err error) {
 		return nil, &ValidationError{Name: "ID", err: fmt.Errorf("missing SMS.ID for update")}
 	}
 	_spec.Node.ID.Value = id
+	if fields := suo.fields; len(fields) > 0 {
+		_spec.Node.Columns = make([]string, 0, len(fields))
+		_spec.Node.Columns = append(_spec.Node.Columns, sms.FieldID)
+		for _, f := range fields {
+			if !sms.ValidColumn(f) {
+				return nil, &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for query", f)}
+			}
+			if f != sms.FieldID {
+				_spec.Node.Columns = append(_spec.Node.Columns, f)
+			}
+		}
+	}
 	if ps := suo.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
 			for i := range ps {
@@ -307,6 +339,12 @@ func (suo *SMSUpdateOne) sqlSave(ctx context.Context) (_node *SMS, err error) {
 			Type:   field.TypeTime,
 			Value:  value,
 			Column: sms.FieldUpdatedAt,
+		})
+	}
+	if suo.mutation.ModemIDCleared() {
+		_spec.Fields.Clear = append(_spec.Fields.Clear, &sqlgraph.FieldSpec{
+			Type:   field.TypeString,
+			Column: sms.FieldModemID,
 		})
 	}
 	if value, ok := suo.mutation.DeliveryState(); ok {
@@ -322,8 +360,8 @@ func (suo *SMSUpdateOne) sqlSave(ctx context.Context) (_node *SMS, err error) {
 	if err = sqlgraph.UpdateNode(ctx, suo.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{sms.Label}
-		} else if cerr, ok := isSQLConstraintError(err); ok {
-			err = cerr
+		} else if sqlgraph.IsConstraintError(err) {
+			err = &ConstraintError{err.Error(), err}
 		}
 		return nil, err
 	}

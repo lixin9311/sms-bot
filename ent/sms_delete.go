@@ -20,9 +20,9 @@ type SMSDelete struct {
 	mutation *SMSMutation
 }
 
-// Where adds a new predicate to the SMSDelete builder.
+// Where appends a list predicates to the SMSDelete builder.
 func (sd *SMSDelete) Where(ps ...predicate.SMS) *SMSDelete {
-	sd.mutation.predicates = append(sd.mutation.predicates, ps...)
+	sd.mutation.Where(ps...)
 	return sd
 }
 
@@ -46,6 +46,9 @@ func (sd *SMSDelete) Exec(ctx context.Context) (int, error) {
 			return affected, err
 		})
 		for i := len(sd.hooks) - 1; i >= 0; i-- {
+			if sd.hooks[i] == nil {
+				return 0, fmt.Errorf("ent: uninitialized hook (forgotten import ent/runtime?)")
+			}
 			mut = sd.hooks[i](mut)
 		}
 		if _, err := mut.Mutate(ctx, sd.mutation); err != nil {

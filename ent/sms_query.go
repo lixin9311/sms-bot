@@ -20,6 +20,7 @@ type SMSQuery struct {
 	config
 	limit      *int
 	offset     *int
+	unique     *bool
 	order      []OrderFunc
 	fields     []string
 	predicates []predicate.SMS
@@ -43,6 +44,13 @@ func (sq *SMSQuery) Limit(limit int) *SMSQuery {
 // Offset adds an offset step to the query.
 func (sq *SMSQuery) Offset(offset int) *SMSQuery {
 	sq.offset = &offset
+	return sq
+}
+
+// Unique configures the query builder to filter duplicate records on query.
+// By default, unique is set to true, and can be disabled using this method.
+func (sq *SMSQuery) Unique(unique bool) *SMSQuery {
+	sq.unique = &unique
 	return sq
 }
 
@@ -279,8 +287,8 @@ func (sq *SMSQuery) GroupBy(field string, fields ...string) *SMSGroupBy {
 //		Select(sms.FieldCreatedAt).
 //		Scan(ctx, &v)
 //
-func (sq *SMSQuery) Select(field string, fields ...string) *SMSSelect {
-	sq.fields = append([]string{field}, fields...)
+func (sq *SMSQuery) Select(fields ...string) *SMSSelect {
+	sq.fields = append(sq.fields, fields...)
 	return &SMSSelect{SMSQuery: sq}
 }
 
@@ -334,7 +342,7 @@ func (sq *SMSQuery) sqlCount(ctx context.Context) (int, error) {
 func (sq *SMSQuery) sqlExist(ctx context.Context) (bool, error) {
 	n, err := sq.sqlCount(ctx)
 	if err != nil {
-		return false, fmt.Errorf("ent: check existence: %v", err)
+		return false, fmt.Errorf("ent: check existence: %w", err)
 	}
 	return n > 0, nil
 }
@@ -351,6 +359,9 @@ func (sq *SMSQuery) querySpec() *sqlgraph.QuerySpec {
 		},
 		From:   sq.sql,
 		Unique: true,
+	}
+	if unique := sq.unique; unique != nil {
+		_spec.Unique = *unique
 	}
 	if fields := sq.fields; len(fields) > 0 {
 		_spec.Node.Columns = make([]string, 0, len(fields))
@@ -377,7 +388,7 @@ func (sq *SMSQuery) querySpec() *sqlgraph.QuerySpec {
 	if ps := sq.order; len(ps) > 0 {
 		_spec.Order = func(selector *sql.Selector) {
 			for i := range ps {
-				ps[i](selector, sms.ValidColumn)
+				ps[i](selector)
 			}
 		}
 	}
@@ -387,16 +398,20 @@ func (sq *SMSQuery) querySpec() *sqlgraph.QuerySpec {
 func (sq *SMSQuery) sqlQuery(ctx context.Context) *sql.Selector {
 	builder := sql.Dialect(sq.driver.Dialect())
 	t1 := builder.Table(sms.Table)
-	selector := builder.Select(t1.Columns(sms.Columns...)...).From(t1)
+	columns := sq.fields
+	if len(columns) == 0 {
+		columns = sms.Columns
+	}
+	selector := builder.Select(t1.Columns(columns...)...).From(t1)
 	if sq.sql != nil {
 		selector = sq.sql
-		selector.Select(selector.Columns(sms.Columns...)...)
+		selector.Select(selector.Columns(columns...)...)
 	}
 	for _, p := range sq.predicates {
 		p(selector)
 	}
 	for _, p := range sq.order {
-		p(selector, sms.ValidColumn)
+		p(selector)
 	}
 	if offset := sq.offset; offset != nil {
 		// limit is mandatory for offset clause. We start
@@ -658,13 +673,24 @@ func (sgb *SMSGroupBy) sqlScan(ctx context.Context, v interface{}) error {
 }
 
 func (sgb *SMSGroupBy) sqlQuery() *sql.Selector {
-	selector := sgb.sql
-	columns := make([]string, 0, len(sgb.fields)+len(sgb.fns))
-	columns = append(columns, sgb.fields...)
+	selector := sgb.sql.Select()
+	aggregation := make([]string, 0, len(sgb.fns))
 	for _, fn := range sgb.fns {
-		columns = append(columns, fn(selector, sms.ValidColumn))
+		aggregation = append(aggregation, fn(selector))
 	}
-	return selector.Select(columns...).GroupBy(sgb.fields...)
+	// If no columns were selected in a custom aggregation function, the default
+	// selection is the fields used for "group-by", and the aggregation functions.
+	if len(selector.SelectedColumns()) == 0 {
+		columns := make([]string, 0, len(sgb.fields)+len(sgb.fns))
+		for _, f := range sgb.fields {
+			columns = append(columns, selector.C(f))
+		}
+		for _, c := range aggregation {
+			columns = append(columns, c)
+		}
+		selector.Select(columns...)
+	}
+	return selector.GroupBy(selector.Columns(sgb.fields...)...)
 }
 
 // SMSSelect is the builder for selecting fields of SMS entities.
@@ -880,16 +906,10 @@ func (ss *SMSSelect) BoolX(ctx context.Context) bool {
 
 func (ss *SMSSelect) sqlScan(ctx context.Context, v interface{}) error {
 	rows := &sql.Rows{}
-	query, args := ss.sqlQuery().Query()
+	query, args := ss.sql.Query()
 	if err := ss.driver.Query(ctx, query, args, rows); err != nil {
 		return err
 	}
 	defer rows.Close()
 	return sql.ScanSlice(rows, v)
-}
-
-func (ss *SMSSelect) sqlQuery() sql.Querier {
-	selector := ss.sql
-	selector.Select(selector.Columns(ss.fields...)...)
-	return selector
 }

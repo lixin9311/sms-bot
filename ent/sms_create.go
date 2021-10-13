@@ -48,6 +48,20 @@ func (sc *SMSCreate) SetNillableUpdatedAt(t *time.Time) *SMSCreate {
 	return sc
 }
 
+// SetModemID sets the "modem_id" field.
+func (sc *SMSCreate) SetModemID(s string) *SMSCreate {
+	sc.mutation.SetModemID(s)
+	return sc
+}
+
+// SetNillableModemID sets the "modem_id" field if the given value is not nil.
+func (sc *SMSCreate) SetNillableModemID(s *string) *SMSCreate {
+	if s != nil {
+		sc.SetModemID(*s)
+	}
+	return sc
+}
+
 // SetNumber sets the "number" field.
 func (sc *SMSCreate) SetNumber(s string) *SMSCreate {
 	sc.mutation.SetNumber(s)
@@ -113,11 +127,17 @@ func (sc *SMSCreate) Save(ctx context.Context) (*SMS, error) {
 				return nil, err
 			}
 			sc.mutation = mutation
-			node, err = sc.sqlSave(ctx)
+			if node, err = sc.sqlSave(ctx); err != nil {
+				return nil, err
+			}
+			mutation.id = &node.ID
 			mutation.done = true
 			return node, err
 		})
 		for i := len(sc.hooks) - 1; i >= 0; i-- {
+			if sc.hooks[i] == nil {
+				return nil, fmt.Errorf("ent: uninitialized hook (forgotten import ent/runtime?)")
+			}
 			mut = sc.hooks[i](mut)
 		}
 		if _, err := mut.Mutate(ctx, sc.mutation); err != nil {
@@ -134,6 +154,19 @@ func (sc *SMSCreate) SaveX(ctx context.Context) *SMS {
 		panic(err)
 	}
 	return v
+}
+
+// Exec executes the query.
+func (sc *SMSCreate) Exec(ctx context.Context) error {
+	_, err := sc.Save(ctx)
+	return err
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (sc *SMSCreate) ExecX(ctx context.Context) {
+	if err := sc.Exec(ctx); err != nil {
+		panic(err)
+	}
 }
 
 // defaults sets the default values of the builder before save.
@@ -155,29 +188,29 @@ func (sc *SMSCreate) defaults() {
 // check runs all checks and user-defined validators on the builder.
 func (sc *SMSCreate) check() error {
 	if _, ok := sc.mutation.CreatedAt(); !ok {
-		return &ValidationError{Name: "created_at", err: errors.New("ent: missing required field \"created_at\"")}
+		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "created_at"`)}
 	}
 	if _, ok := sc.mutation.UpdatedAt(); !ok {
-		return &ValidationError{Name: "updated_at", err: errors.New("ent: missing required field \"updated_at\"")}
+		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "updated_at"`)}
 	}
 	if _, ok := sc.mutation.Number(); !ok {
-		return &ValidationError{Name: "number", err: errors.New("ent: missing required field \"number\"")}
+		return &ValidationError{Name: "number", err: errors.New(`ent: missing required field "number"`)}
 	}
 	if _, ok := sc.mutation.Data(); !ok {
-		return &ValidationError{Name: "data", err: errors.New("ent: missing required field \"data\"")}
+		return &ValidationError{Name: "data", err: errors.New(`ent: missing required field "data"`)}
 	}
 	if _, ok := sc.mutation.Text(); !ok {
-		return &ValidationError{Name: "text", err: errors.New("ent: missing required field \"text\"")}
+		return &ValidationError{Name: "text", err: errors.New(`ent: missing required field "text"`)}
 	}
 	if _, ok := sc.mutation.DischargeTimestamp(); !ok {
-		return &ValidationError{Name: "discharge_timestamp", err: errors.New("ent: missing required field \"discharge_timestamp\"")}
+		return &ValidationError{Name: "discharge_timestamp", err: errors.New(`ent: missing required field "discharge_timestamp"`)}
 	}
 	if _, ok := sc.mutation.DeliveryState(); !ok {
-		return &ValidationError{Name: "delivery_state", err: errors.New("ent: missing required field \"delivery_state\"")}
+		return &ValidationError{Name: "delivery_state", err: errors.New(`ent: missing required field "delivery_state"`)}
 	}
 	if v, ok := sc.mutation.DeliveryState(); ok {
 		if err := sms.DeliveryStateValidator(v); err != nil {
-			return &ValidationError{Name: "delivery_state", err: fmt.Errorf("ent: validator failed for field \"delivery_state\": %w", err)}
+			return &ValidationError{Name: "delivery_state", err: fmt.Errorf(`ent: validator failed for field "delivery_state": %w`, err)}
 		}
 	}
 	return nil
@@ -186,8 +219,8 @@ func (sc *SMSCreate) check() error {
 func (sc *SMSCreate) sqlSave(ctx context.Context) (*SMS, error) {
 	_node, _spec := sc.createSpec()
 	if err := sqlgraph.CreateNode(ctx, sc.driver, _spec); err != nil {
-		if cerr, ok := isSQLConstraintError(err); ok {
-			err = cerr
+		if sqlgraph.IsConstraintError(err) {
+			err = &ConstraintError{err.Error(), err}
 		}
 		return nil, err
 	}
@@ -222,6 +255,14 @@ func (sc *SMSCreate) createSpec() (*SMS, *sqlgraph.CreateSpec) {
 			Column: sms.FieldUpdatedAt,
 		})
 		_node.UpdatedAt = value
+	}
+	if value, ok := sc.mutation.ModemID(); ok {
+		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
+			Type:   field.TypeString,
+			Value:  value,
+			Column: sms.FieldModemID,
+		})
+		_node.ModemID = &value
 	}
 	if value, ok := sc.mutation.Number(); ok {
 		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
@@ -295,19 +336,23 @@ func (scb *SMSCreateBulk) Save(ctx context.Context) ([]*SMS, error) {
 				if i < len(mutators)-1 {
 					_, err = mutators[i+1].Mutate(root, scb.builders[i+1].mutation)
 				} else {
+					spec := &sqlgraph.BatchCreateSpec{Nodes: specs}
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, scb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs}); err != nil {
-						if cerr, ok := isSQLConstraintError(err); ok {
-							err = cerr
+					if err = sqlgraph.BatchCreate(ctx, scb.driver, spec); err != nil {
+						if sqlgraph.IsConstraintError(err) {
+							err = &ConstraintError{err.Error(), err}
 						}
 					}
 				}
-				mutation.done = true
 				if err != nil {
 					return nil, err
 				}
-				id := specs[i].ID.Value.(int64)
-				nodes[i].ID = int(id)
+				mutation.id = &nodes[i].ID
+				mutation.done = true
+				if specs[i].ID.Value != nil {
+					id := specs[i].ID.Value.(int64)
+					nodes[i].ID = int(id)
+				}
 				return nodes[i], nil
 			})
 			for i := len(builder.hooks) - 1; i >= 0; i-- {
@@ -331,4 +376,17 @@ func (scb *SMSCreateBulk) SaveX(ctx context.Context) []*SMS {
 		panic(err)
 	}
 	return v
+}
+
+// Exec executes the query.
+func (scb *SMSCreateBulk) Exec(ctx context.Context) error {
+	_, err := scb.Save(ctx)
+	return err
+}
+
+// ExecX is like Exec, but panics if an error occurs.
+func (scb *SMSCreateBulk) ExecX(ctx context.Context) {
+	if err := scb.Exec(ctx); err != nil {
+		panic(err)
+	}
 }

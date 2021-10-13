@@ -34,6 +34,7 @@ type SMSMutation struct {
 	id                  *int
 	created_at          *time.Time
 	updated_at          *time.Time
+	modem_id            *string
 	number              *string
 	data                *[]byte
 	text                *string
@@ -115,8 +116,8 @@ func (m SMSMutation) Tx() (*Tx, error) {
 	return tx, nil
 }
 
-// ID returns the ID value in the mutation. Note that the ID
-// is only available if it was provided to the builder.
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
 func (m *SMSMutation) ID() (id int, exists bool) {
 	if m.id == nil {
 		return
@@ -194,6 +195,55 @@ func (m *SMSMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error)
 // ResetUpdatedAt resets all changes to the "updated_at" field.
 func (m *SMSMutation) ResetUpdatedAt() {
 	m.updated_at = nil
+}
+
+// SetModemID sets the "modem_id" field.
+func (m *SMSMutation) SetModemID(s string) {
+	m.modem_id = &s
+}
+
+// ModemID returns the value of the "modem_id" field in the mutation.
+func (m *SMSMutation) ModemID() (r string, exists bool) {
+	v := m.modem_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModemID returns the old "modem_id" field's value of the SMS entity.
+// If the SMS object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SMSMutation) OldModemID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, fmt.Errorf("OldModemID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, fmt.Errorf("OldModemID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModemID: %w", err)
+	}
+	return oldValue.ModemID, nil
+}
+
+// ClearModemID clears the value of the "modem_id" field.
+func (m *SMSMutation) ClearModemID() {
+	m.modem_id = nil
+	m.clearedFields[sms.FieldModemID] = struct{}{}
+}
+
+// ModemIDCleared returns if the "modem_id" field was cleared in this mutation.
+func (m *SMSMutation) ModemIDCleared() bool {
+	_, ok := m.clearedFields[sms.FieldModemID]
+	return ok
+}
+
+// ResetModemID resets all changes to the "modem_id" field.
+func (m *SMSMutation) ResetModemID() {
+	m.modem_id = nil
+	delete(m.clearedFields, sms.FieldModemID)
 }
 
 // SetNumber sets the "number" field.
@@ -376,6 +426,11 @@ func (m *SMSMutation) ResetDeliveryState() {
 	m.delivery_state = nil
 }
 
+// Where appends a list predicates to the SMSMutation builder.
+func (m *SMSMutation) Where(ps ...predicate.SMS) {
+	m.predicates = append(m.predicates, ps...)
+}
+
 // Op returns the operation name.
 func (m *SMSMutation) Op() Op {
 	return m.op
@@ -390,12 +445,15 @@ func (m *SMSMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SMSMutation) Fields() []string {
-	fields := make([]string, 0, 7)
+	fields := make([]string, 0, 8)
 	if m.created_at != nil {
 		fields = append(fields, sms.FieldCreatedAt)
 	}
 	if m.updated_at != nil {
 		fields = append(fields, sms.FieldUpdatedAt)
+	}
+	if m.modem_id != nil {
+		fields = append(fields, sms.FieldModemID)
 	}
 	if m.number != nil {
 		fields = append(fields, sms.FieldNumber)
@@ -424,6 +482,8 @@ func (m *SMSMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedAt()
 	case sms.FieldUpdatedAt:
 		return m.UpdatedAt()
+	case sms.FieldModemID:
+		return m.ModemID()
 	case sms.FieldNumber:
 		return m.Number()
 	case sms.FieldData:
@@ -447,6 +507,8 @@ func (m *SMSMutation) OldField(ctx context.Context, name string) (ent.Value, err
 		return m.OldCreatedAt(ctx)
 	case sms.FieldUpdatedAt:
 		return m.OldUpdatedAt(ctx)
+	case sms.FieldModemID:
+		return m.OldModemID(ctx)
 	case sms.FieldNumber:
 		return m.OldNumber(ctx)
 	case sms.FieldData:
@@ -479,6 +541,13 @@ func (m *SMSMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedAt(v)
+		return nil
+	case sms.FieldModemID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModemID(v)
 		return nil
 	case sms.FieldNumber:
 		v, ok := value.(string)
@@ -544,7 +613,11 @@ func (m *SMSMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *SMSMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(sms.FieldModemID) {
+		fields = append(fields, sms.FieldModemID)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -557,6 +630,11 @@ func (m *SMSMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *SMSMutation) ClearField(name string) error {
+	switch name {
+	case sms.FieldModemID:
+		m.ClearModemID()
+		return nil
+	}
 	return fmt.Errorf("unknown SMS nullable field %s", name)
 }
 
@@ -569,6 +647,9 @@ func (m *SMSMutation) ResetField(name string) error {
 		return nil
 	case sms.FieldUpdatedAt:
 		m.ResetUpdatedAt()
+		return nil
+	case sms.FieldModemID:
+		m.ResetModemID()
 		return nil
 	case sms.FieldNumber:
 		m.ResetNumber()

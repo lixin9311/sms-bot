@@ -20,6 +20,8 @@ type SMS struct {
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	// ModemID holds the value of the "modem_id" field.
+	ModemID *string `json:"modem_id,omitempty"`
 	// Number holds the value of the "number" field.
 	Number string `json:"number,omitempty"`
 	// Data holds the value of the "data" field.
@@ -38,13 +40,13 @@ func (*SMS) scanValues(columns []string) ([]interface{}, error) {
 	for i := range columns {
 		switch columns[i] {
 		case sms.FieldData:
-			values[i] = &[]byte{}
+			values[i] = new([]byte)
 		case sms.FieldID:
-			values[i] = &sql.NullInt64{}
-		case sms.FieldNumber, sms.FieldText, sms.FieldDeliveryState:
-			values[i] = &sql.NullString{}
+			values[i] = new(sql.NullInt64)
+		case sms.FieldModemID, sms.FieldNumber, sms.FieldText, sms.FieldDeliveryState:
+			values[i] = new(sql.NullString)
 		case sms.FieldCreatedAt, sms.FieldUpdatedAt, sms.FieldDischargeTimestamp:
-			values[i] = &sql.NullTime{}
+			values[i] = new(sql.NullTime)
 		default:
 			return nil, fmt.Errorf("unexpected column %q for type SMS", columns[i])
 		}
@@ -77,6 +79,13 @@ func (s *SMS) assignValues(columns []string, values []interface{}) error {
 				return fmt.Errorf("unexpected type %T for field updated_at", values[i])
 			} else if value.Valid {
 				s.UpdatedAt = value.Time
+			}
+		case sms.FieldModemID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field modem_id", values[i])
+			} else if value.Valid {
+				s.ModemID = new(string)
+				*s.ModemID = value.String
 			}
 		case sms.FieldNumber:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -140,6 +149,10 @@ func (s *SMS) String() string {
 	builder.WriteString(s.CreatedAt.Format(time.ANSIC))
 	builder.WriteString(", updated_at=")
 	builder.WriteString(s.UpdatedAt.Format(time.ANSIC))
+	if v := s.ModemID; v != nil {
+		builder.WriteString(", modem_id=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", number=")
 	builder.WriteString(s.Number)
 	builder.WriteString(", data=")

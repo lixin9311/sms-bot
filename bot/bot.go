@@ -8,6 +8,7 @@ import (
 	"log"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lixin9311/sms-bot/ent"
@@ -37,13 +38,14 @@ var (
 	}
 	incomingCallTemplate = template.Must(template.New("incomingCall").Parse(incomingCallTemplateStr))
 	modemInfoTemplate    = template.Must(template.New("info").Parse(modemInfoTemplateStr))
+	modemAddedTemplate   = template.Must(template.New("info").Parse(modemAddedTemplateStr))
+	modemRemovedTemplate = template.Must(template.New("info").Parse(modemRemovedTemplateStr))
 	singleSMSTemplate    = template.Must(template.New("singleSMS").Parse(singleSMSTemplateStr))
 	multipleSMSTemplate  = template.Must(template.New("multiSMS").Funcs(funcMap).Parse(multipleSMSTemplateStr))
 	errorTemplate        = template.Must(template.New("error").Parse(errorTemplateStr))
 	extractSender        = regexp.MustCompile(`^From (\d+)`)
 	// Universal markup builders.
-	menu     = &tb.ReplyMarkup{ResizeReplyKeyboard: true}
-	selector = &tb.ReplyMarkup{}
+	menu = &tb.ReplyMarkup{ResizeReplyKeyboard: true}
 
 	// Reply buttons.
 	btnHelp     = menu.Text("ℹ Help")
@@ -59,9 +61,6 @@ var (
 	// Make sure Unique stays unique as per button kind,
 	// as it has to be for callback routing to work.
 	//
-	btnPrev  = selector.Data("⬅", "prev")
-	btnNext  = selector.Data("➡", "next")
-	btnReply = selector.Data("↩️", "reply")
 	commands = []tb.Command{
 		{
 			Text:        "list",
@@ -79,13 +78,14 @@ func init() {
 		menu.Row(btnSMS, btnInfo),
 		menu.Row(btnHelp, btnSettings),
 	)
-
-	selector.Inline(
-		selector.Row(btnPrev, btnNext),
-	)
 }
 
 func userIDFilter(userID int) func(*tb.Update) bool {
+	if userID == 0 {
+		return func(up *tb.Update) bool {
+			return true
+		}
+	}
 	return func(up *tb.Update) bool {
 		if up.Message != nil && up.Message.Sender != nil && up.Message.Sender.ID == userID {
 			return true
@@ -148,10 +148,110 @@ func (b *Bot) init() {
 	b.bot.Handle("/start", b.onStart)
 	b.bot.Handle("/me", b.onMe)
 	b.bot.Handle(tb.OnText, b.onText)
-	b.bot.Handle(&btnSMS, b.onListSMS)
+	b.bot.Handle(&btnSMS, b.onListSMSOption)
 	b.bot.Handle(&btnInfo, b.onInfo)
 	b.bot.Handle(&btnHelp, b.help)
-	b.bot.Handle(&btnPrev, b.prev)
+	b.bot.Handle(tb.OnCallback, func(cb *tb.Callback) {
+		parts := strings.Split(strings.TrimSpace(cb.Data), "|")
+		if len(parts) != 2 {
+			return
+		}
+		action := parts[0]
+		data := parts[1]
+		switch action {
+		case "modem_info":
+			b.onModemInfo(cb, data)
+		case "sms_page":
+			b.onSMSListPage(cb, data)
+		default:
+			b.bot.Respond(cb, &tb.CallbackResponse{
+				CallbackID: cb.ID,
+			})
+		}
+	})
+}
+
+func (b *Bot) onModemInfo(cb *tb.Callback, data string) {
+	b.bot.Respond(cb, &tb.CallbackResponse{
+		CallbackID: cb.ID,
+	})
+	info := b.man.GetModemInfo(data)
+	if info == nil {
+		if _, err := b.bot.Send(cb.Sender, "Modem info unavailable", tb.ModeHTML); err != nil {
+			log.Println(err)
+		}
+	} else {
+		str, err := formatModemInfo(info)
+		if err != nil {
+			b.onError(err)
+			return
+		}
+
+		if _, err := b.bot.Send(cb.Sender, str, tb.ModeHTML); err != nil {
+			log.Println(err)
+		}
+	}
+}
+
+func (b *Bot) onSMSListPage(cb *tb.Callback, data string) {
+	var msg string
+	defer b.bot.Respond(cb, &tb.CallbackResponse{
+		CallbackID: cb.ID,
+		Text:       msg,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	parts := strings.Split(data, ":")
+	if len(parts) != 2 {
+		return
+	}
+	id := parts[0]
+	offset, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return
+	}
+	if offset < 0 {
+		return
+	}
+
+	smss, total, err := b.man.ListSMS(ctx, id, offset, 10)
+	if err != nil {
+		b.onError(err)
+		return
+	}
+	text, err := formatMultipleSMS(smss)
+	if err != nil {
+		b.onError(err)
+		return
+	}
+	var prevOffset, nextOffset int
+	prevOffset = offset - 10
+	if len(smss) < 10 {
+		nextOffset = -1
+	} else {
+		nextOffset = offset + 10
+	}
+	currentPage := offset/10 + 1
+	totalPages := total / 10
+	if total%10 != 0 {
+		totalPages++
+	}
+	selector := &tb.ReplyMarkup{}
+	btnPrev := selector.Data("⬅", "sms_page", id+":"+strconv.Itoa(prevOffset))
+	btnPage := selector.Data(fmt.Sprintf("%d/%d", currentPage, totalPages), "noop")
+	btnNext := selector.Data("➡", "sms_page", id+":"+strconv.Itoa(nextOffset))
+	selector.Inline(
+		selector.Row(btnPrev, btnPage, btnNext),
+	)
+	if cb.Message == nil {
+		if _, err := b.bot.Send(cb.Sender, text, selector, tb.ModeHTML); err != nil {
+			log.Println(err)
+		}
+	} else {
+		if _, err := b.bot.Edit(cb.Message, text, selector, tb.ModeHTML); err != nil {
+			log.Println(err)
+		}
+	}
 }
 
 func (b *Bot) onError(in error) {
@@ -172,8 +272,26 @@ func (b *Bot) onSMS(sms *ent.SMS) {
 	b.bot.Send(userID(b.myUserID), text, tb.ModeHTML)
 }
 
-func (b *Bot) onCall(number string) {
-	text, err := formatIncomingCall(number)
+func (b *Bot) onCall(call *manager.PhoneCall) {
+	text, err := formatIncomingCall(call)
+	if err != nil {
+		b.onError(err)
+		return
+	}
+	b.bot.Send(userID(b.myUserID), text, tb.ModeHTML)
+}
+
+func (b *Bot) onModemAdded(id string) {
+	text, err := formatModemAdded(id)
+	if err != nil {
+		b.onError(err)
+		return
+	}
+	b.bot.Send(userID(b.myUserID), text, tb.ModeHTML)
+}
+
+func (b *Bot) onModemRemoved(id string) {
+	text, err := formatModemRemoved(id)
 	if err != nil {
 		b.onError(err)
 		return
@@ -183,27 +301,27 @@ func (b *Bot) onCall(number string) {
 
 // Start will start the bot
 func (b *Bot) Start(ctx context.Context) error {
-	smsch, errch, err := b.man.SubscribeSMS(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to subscribe from sms: %w", err)
-	}
-
-	phonech, perrch, err := b.man.SubscribeCall(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to subscribe from phone call: %w", err)
-	}
+	ch := b.man.Subscribe()
 
 	go func() {
 		for {
 			select {
-			case sms := <-smsch:
-				b.onSMS(sms)
-			case err := <-errch:
-				b.onError(err)
-			case err := <-perrch:
-				b.onError(err)
-			case phone := <-phonech:
-				b.onCall(phone)
+			case event := <-ch:
+				if b.myUserID == 0 {
+					continue
+				}
+				switch event.Type {
+				case manager.ErrorEvent:
+					b.onError(event.Payload.(error))
+				case manager.SMSEvent:
+					b.onSMS(event.Payload.(*ent.SMS))
+				case manager.PhoneCallEvent:
+					b.onCall(event.Payload.(*manager.PhoneCall))
+				case manager.ModemAddEvent:
+					b.onModemAdded(event.Payload.(string))
+				case manager.ModemRemoveEvent:
+					b.onModemRemoved(event.Payload.(string))
+				}
 			case <-ctx.Done():
 				b.bot.Stop()
 			}
@@ -214,9 +332,27 @@ func (b *Bot) Start(ctx context.Context) error {
 	return nil
 }
 
-func formatIncomingCall(number string) (string, error) {
+func formatModemAdded(id string) (string, error) {
 	buf := new(bytes.Buffer)
-	err := incomingCallTemplate.Execute(buf, number)
+	err := modemAddedTemplate.Execute(buf, id)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func formatModemRemoved(id string) (string, error) {
+	buf := new(bytes.Buffer)
+	err := modemRemovedTemplate.Execute(buf, id)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func formatIncomingCall(call *manager.PhoneCall) (string, error) {
+	buf := new(bytes.Buffer)
+	err := incomingCallTemplate.Execute(buf, call)
 	if err != nil {
 		return "", err
 	}
@@ -262,18 +398,19 @@ func formatModemInfo(in *manager.ModemInfo) (string, error) {
 	return buf.String(), nil
 }
 
-var incomingCallTemplateStr = `<b>Incoming call from:</b> {{.}}`
-
+var incomingCallTemplateStr = `<b>Incoming call to {{.ModemID}} from:</b> {{.Caller}}`
+var modemAddedTemplateStr = `<b>Modem connected:</b> {{.}}`
+var modemRemovedTemplateStr = `<b>Modem disconnected:</b> {{.}}`
 var errorTemplateStr = `❌ <code>{{.Error}}</code>`
 
 var multipleSMSTemplateStr = `
 {{range $i, $sms := .}}
-<b>[{{add1 $i}}/{{len $}}] From {{$sms.Number}} {{$sms.DischargeTimestamp.Format "2006/01/02 15:04:05"}}:</b>
+<b>[{{add1 $i}}/{{len $}}] From {{$sms.Number}} To {{$sms.ModemID}} {{$sms.DischargeTimestamp.Format "2006/01/02 15:04:05"}}:</b>
 {{if $sms.Text}} {{$sms.Text}} {{else}} <pre>{{$sms.String}}</pre> {{end}}
 {{end}}
 `
 
-var singleSMSTemplateStr = `<b>From {{.Number}} {{.DischargeTimestamp.Format "2006/01/02 15:04:05"}}:</b>
+var singleSMSTemplateStr = `<b>From {{.Number}} To {{.ModemID}} {{.DischargeTimestamp.Format "2006/01/02 15:04:05"}}:</b>
 {{if .Text}} {{.Text}} {{else}} <pre>{{.String}}</pre> {{end}}
 `
 

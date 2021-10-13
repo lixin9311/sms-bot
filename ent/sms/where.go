@@ -106,6 +106,13 @@ func UpdatedAt(v time.Time) predicate.SMS {
 	})
 }
 
+// ModemID applies equality check predicate on the "modem_id" field. It's identical to ModemIDEQ.
+func ModemID(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.EQ(s.C(FieldModemID), v))
+	})
+}
+
 // Number applies equality check predicate on the "number" field. It's identical to NumberEQ.
 func Number(v string) predicate.SMS {
 	return predicate.SMS(func(s *sql.Selector) {
@@ -283,6 +290,131 @@ func UpdatedAtLT(v time.Time) predicate.SMS {
 func UpdatedAtLTE(v time.Time) predicate.SMS {
 	return predicate.SMS(func(s *sql.Selector) {
 		s.Where(sql.LTE(s.C(FieldUpdatedAt), v))
+	})
+}
+
+// ModemIDEQ applies the EQ predicate on the "modem_id" field.
+func ModemIDEQ(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.EQ(s.C(FieldModemID), v))
+	})
+}
+
+// ModemIDNEQ applies the NEQ predicate on the "modem_id" field.
+func ModemIDNEQ(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.NEQ(s.C(FieldModemID), v))
+	})
+}
+
+// ModemIDIn applies the In predicate on the "modem_id" field.
+func ModemIDIn(vs ...string) predicate.SMS {
+	v := make([]interface{}, len(vs))
+	for i := range v {
+		v[i] = vs[i]
+	}
+	return predicate.SMS(func(s *sql.Selector) {
+		// if not arguments were provided, append the FALSE constants,
+		// since we can't apply "IN ()". This will make this predicate falsy.
+		if len(v) == 0 {
+			s.Where(sql.False())
+			return
+		}
+		s.Where(sql.In(s.C(FieldModemID), v...))
+	})
+}
+
+// ModemIDNotIn applies the NotIn predicate on the "modem_id" field.
+func ModemIDNotIn(vs ...string) predicate.SMS {
+	v := make([]interface{}, len(vs))
+	for i := range v {
+		v[i] = vs[i]
+	}
+	return predicate.SMS(func(s *sql.Selector) {
+		// if not arguments were provided, append the FALSE constants,
+		// since we can't apply "IN ()". This will make this predicate falsy.
+		if len(v) == 0 {
+			s.Where(sql.False())
+			return
+		}
+		s.Where(sql.NotIn(s.C(FieldModemID), v...))
+	})
+}
+
+// ModemIDGT applies the GT predicate on the "modem_id" field.
+func ModemIDGT(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.GT(s.C(FieldModemID), v))
+	})
+}
+
+// ModemIDGTE applies the GTE predicate on the "modem_id" field.
+func ModemIDGTE(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.GTE(s.C(FieldModemID), v))
+	})
+}
+
+// ModemIDLT applies the LT predicate on the "modem_id" field.
+func ModemIDLT(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.LT(s.C(FieldModemID), v))
+	})
+}
+
+// ModemIDLTE applies the LTE predicate on the "modem_id" field.
+func ModemIDLTE(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.LTE(s.C(FieldModemID), v))
+	})
+}
+
+// ModemIDContains applies the Contains predicate on the "modem_id" field.
+func ModemIDContains(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.Contains(s.C(FieldModemID), v))
+	})
+}
+
+// ModemIDHasPrefix applies the HasPrefix predicate on the "modem_id" field.
+func ModemIDHasPrefix(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.HasPrefix(s.C(FieldModemID), v))
+	})
+}
+
+// ModemIDHasSuffix applies the HasSuffix predicate on the "modem_id" field.
+func ModemIDHasSuffix(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.HasSuffix(s.C(FieldModemID), v))
+	})
+}
+
+// ModemIDIsNil applies the IsNil predicate on the "modem_id" field.
+func ModemIDIsNil() predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.IsNull(s.C(FieldModemID)))
+	})
+}
+
+// ModemIDNotNil applies the NotNil predicate on the "modem_id" field.
+func ModemIDNotNil() predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.NotNull(s.C(FieldModemID)))
+	})
+}
+
+// ModemIDEqualFold applies the EqualFold predicate on the "modem_id" field.
+func ModemIDEqualFold(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.EqualFold(s.C(FieldModemID), v))
+	})
+}
+
+// ModemIDContainsFold applies the ContainsFold predicate on the "modem_id" field.
+func ModemIDContainsFold(v string) predicate.SMS {
+	return predicate.SMS(func(s *sql.Selector) {
+		s.Where(sql.ContainsFold(s.C(FieldModemID), v))
 	})
 }
 
