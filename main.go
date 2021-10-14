@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/lixin9311/sms-bot/bot"
 	"github.com/lixin9311/sms-bot/ent"
@@ -69,6 +71,6 @@ func main() {
 	}()
 
 	quit := make(chan os.Signal, 1)
-	// signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 	<-quit
 }
