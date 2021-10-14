@@ -74,7 +74,6 @@ func (m *Manager) init(ctx context.Context) error {
 			m.dispatchErr(fmt.Errorf("unable to add modem: %v", err))
 		}
 	}
-	ch := mmgr.SubscribePropertiesChanged()
 	go func() {
 		lastScan := time.Now()
 		tick := time.NewTicker(time.Minute)
@@ -84,22 +83,6 @@ func (m *Manager) init(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-tick.C:
-				now := time.Now()
-				if now.Sub(lastScan) < 30*time.Second {
-					continue
-				}
-				lastScan = now
-				if modems, err := m.scanModems(mmgr); err != nil {
-					m.dispatchErr(fmt.Errorf("unable to scan modem: %v", err))
-				} else {
-					for _, modem := range modems {
-						if err := m.addModem(modem); err != nil {
-							log.Printf("unable to add modem: %v", err)
-							m.dispatchErr(fmt.Errorf("unable to add modem: %v", err))
-						}
-					}
-				}
-			case <-ch:
 				now := time.Now()
 				if now.Sub(lastScan) < 30*time.Second {
 					continue
@@ -242,7 +225,13 @@ func (m *Manager) subscribeModem(ctx context.Context, id string, modem modemmana
 		m.dispatchErr(fmt.Errorf("modem[%s] failed to get messaging endpoint: %w", id, err))
 		return
 	}
-	smsch := msg.SubscribeAdded()
+	smsch, err := msg.Subscribe(modemmanager.ModemMessagingSignalAdded)
+	if err != nil {
+		err := fmt.Errorf("modem[%s] failed to subscribe message event: %w", id, err)
+		log.Print(err)
+		m.dispatchErr(err)
+		return
+	}
 	defer msg.Unsubscribe()
 	var voiceCh <-chan *dbus.Signal
 	voice, err := modem.GetVoice()
@@ -250,8 +239,14 @@ func (m *Manager) subscribeModem(ctx context.Context, id string, modem modemmana
 		log.Printf("modem[%s] failed to get voice endpoint: %v", id, err)
 		m.dispatchErr(fmt.Errorf("modem[%s] failed to get voice endpoint: %w", id, err))
 	} else {
-		voiceCh = voice.SubscribeCallAdded()
-		defer voice.Unsubscribe()
+		voiceCh, err = voice.Subscribe(modemmanager.ModemVoiceSignalCallAdded)
+		if err != nil {
+			err := fmt.Errorf("modem[%s] failed to subscribe phone call event: %w", id, err)
+			log.Print(err)
+			m.dispatchErr(err)
+		} else {
+			defer voice.Unsubscribe()
+		}
 	}
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()

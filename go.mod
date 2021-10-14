@@ -4,7 +4,7 @@ go 1.15
 
 require (
 	entgo.io/ent v0.9.1
-	github.com/godbus/dbus/v5 v5.0.4
+	github.com/godbus/dbus/v5 v5.0.5
 	github.com/lixin9311/backoff/v2 v2.0.0
 	github.com/maltegrosse/go-modemmanager v0.1.0
 	github.com/mattn/go-sqlite3 v1.14.8
@@ -12,3 +12,5 @@ require (
 	gopkg.in/tucnak/telebot.v2 v2.3.5
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
+
+replace github.com/maltegrosse/go-modemmanager => github.com/lixin9311/go-modemmanager v0.0.0-20211014064810-def1e6f906dd
