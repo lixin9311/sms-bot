@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/lixin9311/jobcan"
 	"github.com/lixin9311/sms-bot/bot"
 	"github.com/lixin9311/sms-bot/ent"
 	"github.com/lixin9311/sms-bot/ent/migrate"
@@ -20,6 +21,8 @@ import (
 var (
 	userID   = flag.Int("user-id", 0, "user id of yourself, the bot will only responds to you")
 	botToken = flag.String("token", "", "telegram bot token")
+	username = flag.String("username", "", "jobcan username")
+	password = flag.String("password", "", "jobcan pass")
 )
 
 func init() {
@@ -59,7 +62,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to init manager: %v", err)
 	}
-	bot, err := bot.NewBot(*botToken, *userID, man)
+	jbClient := jobcan.NewClient("cookies.json", *username, *password, false)
+	bot, err := bot.NewBot(*botToken, *userID, man, jbClient)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -73,4 +77,5 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 	<-quit
+	jbClient.Close()
 }

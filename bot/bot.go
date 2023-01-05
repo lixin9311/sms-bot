@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lixin9311/jobcan"
 	"github.com/lixin9311/sms-bot/ent"
 	"github.com/lixin9311/sms-bot/manager"
 	tb "gopkg.in/tucnak/telebot.v2"
@@ -18,9 +19,10 @@ import (
 
 // Bot ...
 type Bot struct {
-	man      *manager.Manager
-	myUserID int
-	bot      *tb.Bot
+	man          *manager.Manager
+	jobcanClient *jobcan.Client
+	myUserID     int
+	bot          *tb.Bot
 }
 
 type userID int
@@ -48,11 +50,13 @@ var (
 	menu = &tb.ReplyMarkup{ResizeReplyKeyboard: true}
 
 	// Reply buttons.
-	btnHelp     = menu.Text("ℹ Help")
-	btnInfo     = menu.Text("ℹ Info")
-	btnSettings = menu.Text("⚙ Settings")
-	btnSMS      = menu.Text("✉ List SMS")
-
+	btnHelp          = menu.Text("ℹ Help")
+	btnInfo          = menu.Text("ℹ Info")
+	btnSettings      = menu.Text("⚙ Settings")
+	btnSMS           = menu.Text("✉ List SMS")
+	btnJobcanCheck   = menu.Text("ℹ Check")
+	btnJobcanToggle  = menu.Text("🔄 Toggle")
+	btnJobcanRefresh = menu.Text("🔄 Refresh")
 	// Inline buttons.
 	//
 	// Pressing it will cause the client to
@@ -75,8 +79,8 @@ var (
 
 func init() {
 	menu.Reply(
-		menu.Row(btnSMS, btnInfo),
-		menu.Row(btnHelp, btnSettings),
+		menu.Row(btnSMS, btnInfo, btnSettings),
+		menu.Row(btnJobcanCheck, btnJobcanToggle, btnJobcanRefresh),
 	)
 }
 
@@ -124,7 +128,7 @@ func usernameFilter(username string) func(*tb.Update) bool {
 }
 
 // NewBot will init a tg bot
-func NewBot(token string, myUserID int, man *manager.Manager) (*Bot, error) {
+func NewBot(token string, myUserID int, man *manager.Manager, jobcanClient *jobcan.Client) (*Bot, error) {
 	b, err := tb.NewBot(tb.Settings{
 		Token: token,
 		Poller: &tb.MiddlewarePoller{
@@ -139,7 +143,7 @@ func NewBot(token string, myUserID int, man *manager.Manager) (*Bot, error) {
 	if err := b.SetCommands(commands); err != nil {
 		return nil, fmt.Errorf("failed to reset commands: %w", err)
 	}
-	bot := &Bot{bot: b, myUserID: myUserID, man: man}
+	bot := &Bot{bot: b, myUserID: myUserID, man: man, jobcanClient: jobcanClient}
 	bot.init()
 	return bot, nil
 }
@@ -151,6 +155,9 @@ func (b *Bot) init() {
 	b.bot.Handle(&btnSMS, b.onListSMSOption)
 	b.bot.Handle(&btnInfo, b.onInfo)
 	b.bot.Handle(&btnHelp, b.help)
+	b.bot.Handle(&btnJobcanCheck, b.onJobcanCheck)
+	b.bot.Handle(&btnJobcanToggle, b.onJobcanToggle)
+	b.bot.Handle(&btnJobcanRefresh, b.onJobcanRefresh)
 	b.bot.Handle(tb.OnCallback, func(cb *tb.Callback) {
 		parts := strings.Split(strings.TrimSpace(cb.Data), "|")
 		if len(parts) != 2 {

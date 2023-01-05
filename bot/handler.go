@@ -16,6 +16,40 @@ func (b *Bot) onStart(m *tb.Message) {
 	b.bot.Send(m.Sender, "Hello!", menu)
 }
 
+func (b *Bot) onJobcanCheck(m *tb.Message) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	status, err := b.jobcanClient.GetStatus(ctx)
+	if err != nil {
+		b.onError(err)
+		return
+	}
+	b.bot.Send(m.Sender, fmt.Sprintf("Current status is: <b>%s</b>", status), tb.ModeHTML)
+}
+
+func (b *Bot) onJobcanToggle(m *tb.Message) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	prevStatus, newStatus, err := b.jobcanClient.Toggle(ctx)
+	if err != nil {
+		b.onError(err)
+		return
+	}
+	b.bot.Send(m.Sender, fmt.Sprintf("Toggled <b>%s</b> ➡ <b>%s</b>", prevStatus, newStatus), tb.ModeHTML)
+}
+
+func (b *Bot) onJobcanRefresh(m *tb.Message) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	b.jobcanClient.Reset()
+	status, _, err := b.jobcanClient.Login(ctx)
+	if err != nil {
+		b.onError(err)
+		return
+	}
+	b.bot.Send(m.Sender, fmt.Sprintf("Refreshed! Current status is  <b>%s</b>", status), tb.ModeHTML)
+}
+
 func (b *Bot) onInfo(m *tb.Message) {
 	modems := b.man.ListModems()
 
