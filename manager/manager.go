@@ -173,6 +173,19 @@ func (m *Manager) addModem(modem modemmanager.Modem) error {
 	m.mapLock.Lock()
 	defer m.mapLock.Unlock()
 
+	st, err := modem.GetState()
+	if err != nil {
+		return fmt.Errorf("unable to get modem state: %w", err)
+	}
+	switch st {
+	case modemmanager.MmModemStateDisabled:
+		if err := modem.Enable(); err != nil {
+			return fmt.Errorf("unable to enable modem: %w", err)
+		}
+	case modemmanager.MmModemStateFailed, modemmanager.MmModemStateUnknown, modemmanager.MmModemStateLocked:
+		return fmt.Errorf("modem in bad state: %s", st)
+	}
+
 	m.modems[id] = modem
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.cancels[id] = cancel
@@ -181,15 +194,17 @@ func (m *Manager) addModem(modem modemmanager.Modem) error {
 		Type:    ModemAddEvent,
 		Payload: id,
 	}
-	if smss, err := m.LoadSMS(ctx, id, modem); err != nil {
-		err := fmt.Errorf("modem[%s] unable to load existing smss: %w", id, err)
-		log.Println(err)
-		m.dispatchErr(err)
-	} else {
-		for _, sms := range smss {
-			m.eventCh <- Event{
-				Type:    SMSEvent,
-				Payload: sms,
+	if st == modemmanager.MmModemStateEnabled {
+		if smss, err := m.LoadSMS(ctx, id, modem); err != nil {
+			err := fmt.Errorf("modem[%s] unable to load existing smss: %w", id, err)
+			log.Println(err)
+			m.dispatchErr(err)
+		} else {
+			for _, sms := range smss {
+				m.eventCh <- Event{
+					Type:    SMSEvent,
+					Payload: sms,
+				}
 			}
 		}
 	}
@@ -261,10 +276,17 @@ func (m *Manager) subscribeModem(ctx context.Context, id string, modem modemmana
 				m.dispatchErr(err)
 				return
 			}
-			if state == modemmanager.MmModemStateUnknown || state == modemmanager.MmModemStateFailed {
-				err = fmt.Errorf("modem[%s] unknown state, it may disconnected: %w", id, err)
+			if state != modemmanager.MmModemStateEnabled && state != modemmanager.MmModemStateSearching && state != modemmanager.MmModemStateRegistered {
+				err = fmt.Errorf("modem[%s] state is unhealthy: %s", id, state.String())
 				log.Println(err)
 				m.dispatchErr(err)
+				if state == modemmanager.MmModemStateDisabled {
+					if err := modem.Enable(); err != nil {
+						err = fmt.Errorf("modem[%s] failed to enable modem: %w", id, err)
+						log.Println(err)
+						m.dispatchErr(err)
+					}
+				}
 				return
 			}
 		case <-ctx.Done():
